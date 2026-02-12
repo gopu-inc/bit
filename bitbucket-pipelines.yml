@@ -1,0 +1,13 @@
+image: gcc:latest
+
+pipelines:
+  default:
+    - step:
+        name: Build and Test
+        caches:
+          - apt
+        script:
+          - apt-get update -qq && apt-get install -y -qq libcurl4-openssl-dev jq > /dev/null
+          - make
+          - ./bit --version
+
