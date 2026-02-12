@@ -42,4 +42,4 @@ curl -sSL [https://raw.githubusercontent.com/ton-pseudo/bit/main/install.sh](htt
 **rejoin la commun discord**: [GOPUDISC](https://discord.gg/RgJRE62AJ)
 
 
-**geter la LICENCE DANS**: [LICENSE]
+**geter la LICENCE DANS**: [LICENSE]()
