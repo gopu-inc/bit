@@ -15,7 +15,7 @@ endif
 # --- COMPILATEURS & FLAGS ---
 CC        := gcc
 # Flags de performance et de debug
-CFLAGS    := -Wall -Wextra -O3 -std=c99 -D_DEFAULT_SOURCE -I$(INC_DIR)
+CFLAGS    := -Wall -Wextra -O3 -std=c99 -D_DEFAULT_SOURCE -I$(INC_DIR) -Wno-deprecated-declarations -Wno-implicit-function-declaration
 # Flags de sécurité (Stack protection, hardening)
 CFLAGS    += -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security
 # Librairies
