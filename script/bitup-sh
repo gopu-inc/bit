@@ -2,8 +2,8 @@
 # bitup - The Bitbucket CLI installer (rustup style)
 # https://github.com/gopu-inc/bit
 #
-# Usage: curl -fsSL https://github.com/gopu-inc/bit/script/bitup-sh | sh
-#        curl -fsSL https://github.com/gopu-inc/bit/script/bitup-sh | sh -s -- --help
+# Usage: curl -fsSL https://raw.githubusercontent.com/gopu-inc/bit/main/script/bitup-sh | sh
+#        curl -fsSL https://raw.githubusercontent.com/gopu-inc/bit/main/script/bitup-sh | sh -s -- --help
 
 set -eu
 
@@ -19,7 +19,6 @@ set -eu
 #   - Automatic architecture detection
 #   - Cross-platform support (Linux/macOS/Windows)
 #   - Progressive download with progress bar
-#   - Checksum verification
 #   - Toolchain management
 #   - Self-update capability
 # =============================================================================
@@ -27,10 +26,12 @@ set -eu
 # Configuration
 BITUP_VERSION="1.0.0"
 BITUP_CHANNEL="stable"  # stable, beta, nightly
-BITUP_REPO="https://github.com/gopu-inc/bit"
-BITUP_CDN="https://github.com/gopu-inc/bit/script/bitup-sh"
+GITHUB_REPO="gopu-inc/bit"
+GITHUB_BRANCH="main"
+RAW_BASE="https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}"
+API_BASE="https://api.github.com/repos/${GITHUB_REPO}"
+RELEASE_BASE="https://github.com/${GITHUB_REPO}/releases/download"
 INSTALL_ROOT="${HOME}/.bitup"
-CARGO_HOME="${HOME}/.cargo"  # For Rust-style integration
 
 # Colors (if terminal supports)
 if [ -t 1 ] && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then
@@ -93,6 +94,8 @@ detect_platform() {
         mingw*|cygwin*|msys*)
                     PLATFORM="windows" ;;
         freebsd)    PLATFORM="freebsd" ;;
+        openbsd)    PLATFORM="openbsd" ;;
+        netbsd)     PLATFORM="netbsd" ;;
         *)          die "Unsupported platform: ${PLATFORM}" ;;
     esac
     
@@ -101,16 +104,13 @@ detect_platform() {
         aarch64|arm64)  ARCH="aarch64" ;;
         i*86)           ARCH="i686" ;;
         armv7l)         ARCH="armv7" ;;
+        ppc64le)        ARCH="powerpc64le" ;;
+        s390x)          ARCH="s390x" ;;
         *)              die "Unsupported architecture: ${ARCH}" ;;
     esac
     
     # Special case for Apple Silicon
     if [ "${PLATFORM}" = "darwin" ] && [ "${ARCH}" = "aarch64" ]; then
-        ARCH="arm64"
-    fi
-    
-    # Special case for Windows on ARM
-    if [ "${PLATFORM}" = "windows" ] && [ "${ARCH}" = "aarch64" ]; then
         ARCH="arm64"
     fi
     
@@ -130,9 +130,9 @@ download() {
     
     if has_command curl; then
         if [ -t 1 ]; then
-            curl -fsSL --progress-bar "$url" -o "$output"
+            curl -fSL --progress-bar "$url" -o "$output"
         else
-            curl -fsSL "$url" -o "$output"
+            curl -fSL "$url" -o "$output"
         fi
     elif has_command wget; then
         if [ -t 1 ]; then
@@ -145,10 +145,44 @@ download() {
     fi
 }
 
+# Download from GitHub RAW
+download_raw() {
+    path="$1"
+    output="$2"
+    download "${RAW_BASE}/${path}" "$output"
+}
+
+# Get latest release version from GitHub API
+get_latest_version() {
+    channel="${1:-stable}"
+    
+    case "$channel" in
+        stable)
+            if has_command curl; then
+                curl -s "${API_BASE}/releases/latest" | grep '"tag_name":' | cut -d'"' -f4
+            elif has_command wget; then
+                wget -q -O- "${API_BASE}/releases/latest" | grep '"tag_name":' | cut -d'"' -f4
+            else
+                echo "v1.0.0"  # Fallback
+            fi
+            ;;
+        beta|nightly)
+            echo "nightly"  # Pour l'instant, même chose
+            ;;
+        *)
+            echo "$channel"
+            ;;
+    esac
+}
+
 # Verify checksum
 verify_checksum() {
     file="$1"
     expected="$2"
+    
+    if [ -z "$expected" ] || [ "$expected" = "skip" ]; then
+        return 0
+    fi
     
     if has_command sha256sum; then
         actual=$(sha256sum "$file" | cut -d' ' -f1)
@@ -160,6 +194,9 @@ verify_checksum() {
     fi
     
     if [ "$actual" != "$expected" ]; then
+        log_error "Checksum mismatch"
+        log_debug "Expected: $expected"
+        log_debug "Actual:   $actual"
         return 1
     fi
     return 0
@@ -193,44 +230,62 @@ install_toolchain() {
     
     log_step "Installing bit ${version} for ${TARGET}"
     
+    # Resolve version if channel
+    if [ "$version" = "stable" ] || [ "$version" = "beta" ] || [ "$version" = "nightly" ]; then
+        version=$(get_latest_version "$version")
+        log_info "Latest ${version} version: ${version}"
+    fi
+    
     # Create directories
     mkdir -p "${INSTALL_ROOT}/toolchains/${version}"
     mkdir -p "${INSTALL_ROOT}/bin"
-    
-    # Download manifest
-    manifest_url="${BITUP_CDN}/dist/${version}/manifest.txt"
-    manifest_file="${INSTALL_ROOT}/tmp/manifest.txt"
-    
     mkdir -p "${INSTALL_ROOT}/tmp"
-    download "$manifest_url" "$manifest_file"
     
-    # Find the right binary
+    # Try to download pre-built binary
     binary_name="bit-${TARGET}"
-    binary_url=$(grep "^${binary_name}" "$manifest_file" | cut -d' ' -f2 || true)
-    binary_checksum=$(grep "^${binary_name}" "$manifest_file" | cut -d' ' -f3 || true)
-    
-    if [ -z "$binary_url" ]; then
-        die "No binary available for ${TARGET} with version ${version}"
+    if [ "$TARGET" = "x86_64-windows" ]; then
+        binary_name="bit-win64.exe"
+    elif [ "$TARGET" = "i686-windows" ]; then
+        binary_name="bit-win32.exe"
     fi
     
-    # Download binary
-    log_info "Downloading bit..."
+    # GitHub release URL
+    binary_url="${RELEASE_BASE}/${version}/${binary_name}"
     binary_file="${INSTALL_ROOT}/toolchains/${version}/bit"
-    download "$binary_url" "$binary_file"
-    chmod +x "$binary_file"
     
-    # Verify checksum
-    if [ -n "$binary_checksum" ]; then
-        log_info "Verifying checksum..."
-        if verify_checksum "$binary_file" "$binary_checksum"; then
-            log_success "Checksum verified"
-        else
-            die "Checksum verification failed"
+    # Add .exe for Windows
+    if [ "$PLATFORM" = "windows" ]; then
+        binary_file="${binary_file}.exe"
+    fi
+    
+    log_info "Downloading bit from GitHub releases..."
+    if download "$binary_url" "$binary_file" 2>/dev/null; then
+        chmod +x "$binary_file"
+        
+        # Try to download checksum
+        checksum_url="${RELEASE_BASE}/${version}/bit-${TARGET}.sha256"
+        checksum_file="${INSTALL_ROOT}/tmp/checksum"
+        if download "$checksum_url" "$checksum_file" 2>/dev/null; then
+            expected=$(cat "$checksum_file" | cut -d' ' -f1)
+            log_info "Verifying checksum..."
+            if verify_checksum "$binary_file" "$expected"; then
+                log_success "Checksum verified"
+            else
+                log_warn "Checksum verification failed, but continuing..."
+            fi
         fi
+        
+        log_success "Binary downloaded successfully!"
+    else
+        log_warn "No pre-built binary available for ${TARGET}"
+        return 1
     fi
     
     # Create symlink
-    ln -sf "../toolchains/${version}/bit" "${INSTALL_ROOT}/bin/bit"
+    ln -sf "$binary_file" "${INSTALL_ROOT}/bin/bit"
+    if [ "$PLATFORM" = "windows" ]; then
+        ln -sf "$binary_file" "${INSTALL_ROOT}/bin/bit.exe"
+    fi
     
     # Save active version
     echo "$version" > "${INSTALL_ROOT}/VERSION"
@@ -243,29 +298,71 @@ install_from_source() {
     log_step "Building from source..."
     
     # Check build dependencies
-    for cmd in gcc make; do
+    MISSING_DEPS=""
+    for cmd in gcc make git; do
         if ! has_command "$cmd"; then
-            die "Missing build dependency: $cmd"
+            MISSING_DEPS="${MISSING_DEPS} $cmd"
         fi
     done
     
+    # Check for curl dev libraries
+    if [ "$PLATFORM" = "linux" ] && ! has_command curl-config; then
+        MISSING_DEPS="${MISSING_DEPS} libcurl-dev"
+    fi
+    
+    if [ -n "$MISSING_DEPS" ]; then
+        log_error "Missing build dependencies:${MISSING_DEPS}"
+        log_info "Please install them using your package manager:"
+        case "$PLATFORM" in
+            linux)
+                if has_command apt-get; then
+                    echo "  sudo apt-get install build-essential libcurl4-openssl-dev git"
+                elif has_command yum; then
+                    echo "  sudo yum install gcc make libcurl-devel git"
+                elif has_command apk; then
+                    echo "  sudo apk add gcc make musl-dev curl-dev git"
+                fi
+                ;;
+            darwin)
+                echo "  brew install gcc make curl git"
+                ;;
+        esac
+        die "Build failed"
+    fi
+    
     # Create temp directory
     build_dir="${INSTALL_ROOT}/tmp/build"
+    rm -rf "$build_dir"
     mkdir -p "$build_dir"
     
     # Download source
-    if [ ! -d "${build_dir}/.git" ]; then
-        git clone --depth=1 "${BITUP_REPO}" "${build_dir}"
-    fi
+    log_info "Cloning repository..."
+    git clone --depth=1 "https://github.com/${GITHUB_REPO}.git" "$build_dir"
     
     # Build
     cd "$build_dir"
-    log_info "Compiling..."
-    make release
+    log_info "Compiling (this may take a moment)..."
+    if [ "$PLATFORM" = "windows" ]; then
+        # Cross-compilation from Linux/macOS to Windows
+        if has_command x86_64-w64-mingw32-gcc; then
+            make windows
+        elif has_command i686-w64-mingw32-gcc; then
+            make windows-32
+        else
+            die "No Windows cross-compiler found"
+        fi
+    else
+        make release
+    fi
     
     # Install
     mkdir -p "${INSTALL_ROOT}/toolchains/local"
-    cp "bin/bit" "${INSTALL_ROOT}/toolchains/local/"
+    if [ -f "bin/bit" ]; then
+        cp "bin/bit" "${INSTALL_ROOT}/toolchains/local/"
+    elif [ -f "bin/bit.exe" ]; then
+        cp "bin/bit.exe" "${INSTALL_ROOT}/toolchains/local/"
+    fi
+    
     ln -sf "../toolchains/local/bit" "${INSTALL_ROOT}/bin/bit"
     
     log_success "Built from source successfully!"
@@ -277,7 +374,7 @@ self_update() {
     
     # Download latest bitup
     tmp_script="${INSTALL_ROOT}/tmp/bitup.new"
-    download "https://bitup.sh/install.sh" "$tmp_script"
+    download_raw "script/bitup-sh" "$tmp_script"
     
     # Verify
     if [ ! -s "$tmp_script" ]; then
@@ -289,6 +386,14 @@ self_update() {
         script_path="${BASH_SOURCE}"
     else
         script_path="$0"
+    fi
+    
+    # If running from pipe, we can't update
+    if [ "$script_path" = "sh" ] || [ "$script_path" = "bash" ]; then
+        log_warn "Cannot update when run from pipe"
+        log_info "New version saved to: $tmp_script"
+        log_info "Run: cat $tmp_script > ~/.local/bin/bitup && chmod +x ~/.local/bin/bitup"
+        return
     fi
     
     if [ -w "$script_path" ]; then
@@ -307,6 +412,11 @@ list_toolchains() {
     
     active=$(cat "${INSTALL_ROOT}/VERSION" 2>/dev/null || echo "none")
     
+    if [ ! -d "${INSTALL_ROOT}/toolchains" ]; then
+        echo "  No toolchains installed"
+        return
+    fi
+    
     for tc in "${INSTALL_ROOT}"/toolchains/*; do
         if [ -d "$tc" ]; then
             name=$(basename "$tc")
@@ -317,6 +427,53 @@ list_toolchains() {
             fi
         fi
     done
+}
+
+# Generate shell completions
+generate_completions() {
+    log_step "Generating shell completions"
+    
+    completions_dir="${INSTALL_ROOT}/completions"
+    mkdir -p "$completions_dir"
+    
+    if [ ! -f "${INSTALL_ROOT}/bin/bit" ]; then
+        die "bit not installed"
+    fi
+    
+    # Basic completions for bash
+    cat > "${completions_dir}/bit.bash" << 'EOF'
+_bit_completions() {
+    local cur prev opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    
+    opts="login whoami copy add commit sends pull switch create-branch merge-create merge-now tag mall ci restore sha --help --verbose"
+    
+    if [[ ${cur} == -* ]] ; then
+        COMPREPLY=( $(compgen -W "--help --verbose" -- ${cur}) )
+    else
+        COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+    fi
+    return 0
+}
+complete -F _bit_completions bit
+EOF
+    
+    # Zsh completions
+    cat > "${completions_dir}/bit.zsh" << 'EOF'
+#compdef bit
+_arguments \
+    '--help[Show help]' \
+    '--verbose[Verbose output]' \
+    '1:command:(login whoami copy add commit sends pull switch create-branch merge-create merge-now tag mall ci restore sha)' \
+    '*::arg:->args'
+EOF
+    
+    log_success "Completions generated in ${completions_dir}"
+    log_info "To enable, add to your shell config:"
+    echo "  Bash: source ${completions_dir}/bit.bash"
+    echo "  Zsh:  source ${completions_dir}/bit.zsh"
 }
 
 # =============================================================================
@@ -330,7 +487,7 @@ ${BOLD}bitup${NC} ${DIM}${BITUP_VERSION}${NC}
 The Bitbucket CLI installer
 
 ${BOLD}USAGE:${NC}
-    bitup [FLAGS] [OPTIONS]
+    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/script/bitup-sh | sh [--] [FLAGS] [OPTIONS]
 
 ${BOLD}FLAGS:${NC}
     -h, --help       Prints help information
@@ -339,10 +496,10 @@ ${BOLD}FLAGS:${NC}
     -f, --force      Force installation (overwrite existing)
     
 ${BOLD}OPTIONS:${NC}
-    --channel <CHANNEL>    Channel to install [stable, beta, nightly]
-    --target <TRIPLE>      Target triple to install for
+    --channel <CHANNEL>    Channel to install [stable, beta, nightly] (default: stable)
+    --target <TRIPLE>      Target triple to install for (auto-detected)
     --version <VERSION>    Specific version to install
-    --to <DIR>             Install to specific directory
+    --to <DIR>             Install to specific directory (default: ~/.bitup)
     
 ${BOLD}COMMANDS:${NC}
     install         Install bit (default)
@@ -353,13 +510,13 @@ ${BOLD}COMMANDS:${NC}
     self-update     Update bitup itself
 
 ${BOLD}EXAMPLES:${NC}
-    curl -fsSL https://bitup.sh | sh
-    curl -fsSL https://bitup.sh | sh -s -- --channel beta
-    curl -fsSL https://bitup.sh | sh -s -- --target x86_64-linux
-    curl -fsSL https://bitup.sh | sh -s -- --to ~/my-custom-path
+    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/script/bitup-sh | sh
+    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/script/bitup-sh | sh -s -- --channel beta
+    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/script/bitup-sh | sh -s -- --target x86_64-linux
+    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/script/bitup-sh | sh -s -- --to ~/my-custom-path
 
 ${BOLD}MORE:${NC}
-    https://bitup.sh
+    https://github.com/${GITHUB_REPO}
 EOF
 }
 
@@ -389,7 +546,7 @@ parse_args() {
                 shift
                 ;;
             --version)
-                BITUP_VERSION="$2"
+                SPECIFIC_VERSION="$2"
                 shift
                 ;;
             --to)
@@ -416,10 +573,17 @@ parse_args() {
             self-update)
                 COMMAND="self-update"
                 ;;
+            --)
+                shift
+                ;;
             *)
-                log_error "Unknown option: $1"
-                show_help
-                exit 1
+                if [ -z "${COMMAND:-}" ]; then
+                    COMMAND="$1"
+                else
+                    log_error "Unknown option: $1"
+                    show_help
+                    exit 1
+                fi
                 ;;
         esac
         shift
@@ -430,12 +594,12 @@ parse_args() {
 main() {
     # Show banner
     cat << "EOF"
-${MAGENTA}
+[35m
     ╔═══════════════════════════════════════╗
-    ║  ${BOLD}bitup - The Bitbucket CLI${NC}${MAGENTA}          ║
-    ║  ${DIM}https://bitup.sh${NC}${MAGENTA}                     ║
+    ║  [1mbitup - The Bitbucket CLI[0m[35m          ║
+    ║  [2mhttps://github.com/gopu-inc/bit[0m[35m      ║
     ╚═══════════════════════════════════════╝
-${NC}
+[0m
 EOF
     
     # Detect platform unless specified
@@ -451,7 +615,8 @@ EOF
             # Check if already installed
             if [ -f "${INSTALL_ROOT}/bin/bit" ] && [ -z "${FORCE:-}" ]; then
                 if [ "${ASSUME_YES:-}" != "1" ]; then
-                    answer=$(prompt "bit already installed. Overwrite?" "y/N")
+                    printf "bit already installed. Overwrite? [y/N] "
+                    read -r answer
                     case "$answer" in
                         y|Y|yes|YES) ;;
                         *) die "Installation aborted" ;;
@@ -459,19 +624,32 @@ EOF
                 fi
             fi
             
+            # Use specific version if provided
+            version="${SPECIFIC_VERSION:-${BITUP_CHANNEL}}"
+            
             # Try binary install first
-            if ! install_toolchain "${BITUP_CHANNEL}" 2>/dev/null; then
+            if ! install_toolchain "$version" 2>/dev/null; then
                 log_warn "Binary download failed, falling back to source build"
                 install_from_source
             fi
+            
+            # Create shell config helper
+            mkdir -p "${INSTALL_ROOT}/env"
+            cat > "${INSTALL_ROOT}/env/bitup.env" << EOF
+# bitup environment
+export PATH="\$PATH:${INSTALL_ROOT}/bin"
+EOF
             
             # Setup PATH
             cat << EOF
 
 ${BOLD}Configure your shell:${NC}
-  Add ${INSTALL_ROOT}/bin to your PATH
-
+  Add to ~/.profile, ~/.bashrc, or ~/.zshrc:
+  
   ${CYAN}export PATH="\$PATH:${INSTALL_ROOT}/bin"${NC}
+
+  Or source the prepared file:
+  ${CYAN}source ${INSTALL_ROOT}/env/bitup.env${NC}
 
   Or run directly:
   ${CYAN}${INSTALL_ROOT}/bin/bit${NC}
@@ -480,15 +658,26 @@ ${BOLD}Get started:${NC}
   ${CYAN}bit login${NC}        # Authenticate with Bitbucket
   ${CYAN}bit copy <url>${NC}   # Clone a repository
   ${CYAN}bit --help${NC}       # Show all commands
+
+${BOLD}Toolchain management:${NC}
+  ${CYAN}bitup list${NC}        # List installed versions
+  ${CYAN}bitup update${NC}      # Update bit and bitup
+  ${CYAN}bitup completions${NC} # Generate shell completions
 EOF
             ;;
             
         update)
             log_step "Updating bit"
+            
+            # Update bitup first
             self_update
             
             # Update toolchain
             current_version=$(cat "${INSTALL_ROOT}/VERSION" 2>/dev/null || echo "stable")
+            log_info "Updating toolchain from ${current_version}"
+            
+            # Remove old and install new
+            rm -rf "${INSTALL_ROOT}/toolchains/${current_version}"
             install_toolchain "$current_version"
             ;;
             
@@ -513,18 +702,7 @@ EOF
             ;;
             
         completions)
-            completions_dir="${INSTALL_ROOT}/completions"
-            mkdir -p "$completions_dir"
-            
-            # Generate completions for different shells
-            if has_command bit; then
-                bit completions bash > "${completions_dir}/bit.bash"
-                bit completions zsh > "${completions_dir}/bit.zsh"
-                bit completions fish > "${completions_dir}/bit.fish"
-                log_success "Completions generated in ${completions_dir}"
-            else
-                die "bit not found in PATH"
-            fi
+            generate_completions
             ;;
             
         self-update)
