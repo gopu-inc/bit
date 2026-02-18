@@ -57,25 +57,3 @@ linux-arm:
 
 # Windows (Requiert mingw-w64)
 windows:
-	@printf "$(CYAN)Building for Windows (x64)...$(RESET)\n"
-	x86_64-w64-mingw32-gcc $(CFLAGS) $(SRCS) -o $(BIN_DIR)/$(NAME)-win64.exe -Icross/win64/curl/include -lcurl -lws2_32 -lcrypt32 -lbcrypt
-
-
-# macOS (Si sur un Mac, compile pour Intel et Apple Silicon)
-macos:
-	@printf "$(CYAN)Building Universal Binary for macOS...$(RESET)\n"
-	$(CC) $(CFLAGS) -arch x86_64 -arch arm64 $(SRCS) -o $(BIN_DIR)/$(NAME)-macos-universal $(LDFLAGS)
-
-platforms: all linux-arm windows macos
-
-# --- NETTOYAGE ---
-
-clean:
-	@rm -rf $(OBJ_DIR)
-	@printf "$(YELLOW)Object files removed.$(RESET)\n"
-
-fclean: clean
-	@rm -rf $(BIN_DIR)
-	@printf "$(YELLOW)Binaries removed.$(RESET)\n"
-
-re: fclean all
