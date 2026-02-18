@@ -1,0 +1,130 @@
+cmake_minimum_required(VERSION 3.18)
+
+project(bit VERSION 1.0 LANGUAGES C)
+
+# =========================================
+#            C STANDARD
+# =========================================
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# =========================================
+#            BUILD TYPE
+# =========================================
+
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
+# =========================================
+#            SOURCES
+# =========================================
+
+file(GLOB SRC_FILES src/*.c)
+
+add_executable(bit ${SRC_FILES})
+
+target_include_directories(bit PRIVATE include)
+
+# =========================================
+#            WARNINGS GOD MODE
+# =========================================
+
+target_compile_options(bit PRIVATE
+
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wshadow
+    -Wformat=2
+    -Wconversion
+    -Wnull-dereference
+    -Wdouble-promotion
+    -Wcast-align
+    -Wstrict-prototypes
+    -Wmissing-prototypes
+)
+
+# =========================================
+#            HARDENING
+# =========================================
+
+target_compile_options(bit PRIVATE
+    -fstack-protector-strong
+    -fstack-clash-protection
+    -fcf-protection
+    -D_FORTIFY_SOURCE=3
+)
+
+# =========================================
+#            RELEASE OPTIMIZATION
+# =========================================
+
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+
+    target_compile_options(bit PRIVATE
+        -O3
+        -flto
+        -funroll-loops
+        -falign-functions=32
+    )
+
+    target_link_options(bit PRIVATE -flto)
+
+endif()
+
+# =========================================
+#            DEBUG
+# =========================================
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+
+    target_compile_options(bit PRIVATE
+        -O0
+        -g3
+        -ggdb3
+    )
+
+endif()
+
+# =========================================
+#            CURL
+# =========================================
+
+find_package(CURL REQUIRED)
+
+target_link_libraries(bit PRIVATE CURL::libcurl)
+
+# =========================================
+#        PORTABLE CPU (IMPORTANT)
+# =========================================
+
+if(NOT MSVC)
+    target_compile_options(bit PRIVATE -march=x86-64-v2)
+endif()
+
+# =========================================
+#            SANITIZERS (OPTION)
+# =========================================
+
+option(ENABLE_ASAN "Enable Address Sanitizer" OFF)
+
+if(ENABLE_ASAN)
+    target_compile_options(bit PRIVATE -fsanitize=address)
+    target_link_options(bit PRIVATE -fsanitize=address)
+endif()
+
+# =========================================
+#            STATIC BUILD OPTION
+# =========================================
+
+option(STATIC_BUILD "Build static binary" OFF)
+
+if(STATIC_BUILD)
+    set_target_properties(bit PROPERTIES
+        LINK_SEARCH_START_STATIC TRUE
+        LINK_SEARCH_END_STATIC TRUE
+    )
+endif()
