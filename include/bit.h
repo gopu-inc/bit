@@ -6,7 +6,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <curl/curl.h>
-#include <sys/stat.h>
+#ifdef _WIN32
+    #include <direct.h>
+    #define mkdir(path, mode) _mkdir(path)
+#else
+    #include <sys/stat.h>
+#endif
+
 #include <sys/types.h>
 #include <unistd.h>
 
