@@ -1,0 +1,538 @@
+#!/bin/sh
+# bitup - The Bitbucket CLI installer (rustup style)
+# https://github.com/gopu-inc/bit
+#
+# Usage: curl -fsSL https://github.com/gopu-inc/bit/script/bitup-sh | sh
+#        curl -fsSL https://github.com/gopu-inc/bit/script/bitup-sh | sh -s -- --help
+
+set -eu
+
+# =============================================================================
+#                        BITUP PROFESSIONAL INSTALLER
+# =============================================================================
+# Version: 1.0.0
+# Author: gopu-inc
+# License: MIT
+#
+# Features:
+#   - Zero dependencies (pure POSIX shell)
+#   - Automatic architecture detection
+#   - Cross-platform support (Linux/macOS/Windows)
+#   - Progressive download with progress bar
+#   - Checksum verification
+#   - Toolchain management
+#   - Self-update capability
+# =============================================================================
+
+# Configuration
+BITUP_VERSION="1.0.0"
+BITUP_CHANNEL="stable"  # stable, beta, nightly
+BITUP_REPO="https://github.com/gopu-inc/bit"
+BITUP_CDN="https://github.com/gopu-inc/bit/script/bitup-sh"
+INSTALL_ROOT="${HOME}/.bitup"
+CARGO_HOME="${HOME}/.cargo"  # For Rust-style integration
+
+# Colors (if terminal supports)
+if [ -t 1 ] && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'
+    MAGENTA='\033[0;35m'
+    CYAN='\033[0;36m'
+    BOLD='\033[1m'
+    DIM='\033[2m'
+    NC='\033[0m'
+else
+    RED=''; GREEN=''; YELLOW=''; BLUE=''; MAGENTA=''; CYAN=''; BOLD=''; DIM=''; NC=''
+fi
+
+# =============================================================================
+#                            UTILITY FUNCTIONS
+# =============================================================================
+
+log_info() {
+    printf "${GREEN}info:${NC} %s\n" "$*"
+}
+
+log_warn() {
+    printf "${YELLOW}warning:${NC} %s\n" "$*" >&2
+}
+
+log_error() {
+    printf "${RED}error:${NC} %s\n" "$*" >&2
+}
+
+log_step() {
+    printf "${BLUE}==>${NC} ${BOLD}%s${NC}\n" "$*"
+}
+
+log_success() {
+    printf "${GREEN}✅ %s${NC}\n" "$*"
+}
+
+log_debug() {
+    if [ "${BITUP_DEBUG:-0}" = "1" ]; then
+        printf "${DIM}[DEBUG] %s${NC}\n" "$*"
+    fi
+}
+
+die() {
+    log_error "$*"
+    exit 1
+}
+
+# Detect OS and architecture
+detect_platform() {
+    PLATFORM="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    ARCH="$(uname -m)"
+    
+    case "${PLATFORM}" in
+        linux)      PLATFORM="linux" ;;
+        darwin)     PLATFORM="darwin" ;;
+        mingw*|cygwin*|msys*)
+                    PLATFORM="windows" ;;
+        freebsd)    PLATFORM="freebsd" ;;
+        *)          die "Unsupported platform: ${PLATFORM}" ;;
+    esac
+    
+    case "${ARCH}" in
+        x86_64|amd64)   ARCH="x86_64" ;;
+        aarch64|arm64)  ARCH="aarch64" ;;
+        i*86)           ARCH="i686" ;;
+        armv7l)         ARCH="armv7" ;;
+        *)              die "Unsupported architecture: ${ARCH}" ;;
+    esac
+    
+    # Special case for Apple Silicon
+    if [ "${PLATFORM}" = "darwin" ] && [ "${ARCH}" = "aarch64" ]; then
+        ARCH="arm64"
+    fi
+    
+    # Special case for Windows on ARM
+    if [ "${PLATFORM}" = "windows" ] && [ "${ARCH}" = "aarch64" ]; then
+        ARCH="arm64"
+    fi
+    
+    TARGET="${ARCH}-${PLATFORM}"
+    log_debug "Detected platform: ${TARGET}"
+}
+
+# Check if command exists
+has_command() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Download with progress
+download() {
+    url="$1"
+    output="$2"
+    
+    if has_command curl; then
+        if [ -t 1 ]; then
+            curl -fsSL --progress-bar "$url" -o "$output"
+        else
+            curl -fsSL "$url" -o "$output"
+        fi
+    elif has_command wget; then
+        if [ -t 1 ]; then
+            wget -q --show-progress "$url" -O "$output"
+        else
+            wget -q "$url" -O "$output"
+        fi
+    else
+        die "Neither curl nor wget found. Please install one of them."
+    fi
+}
+
+# Verify checksum
+verify_checksum() {
+    file="$1"
+    expected="$2"
+    
+    if has_command sha256sum; then
+        actual=$(sha256sum "$file" | cut -d' ' -f1)
+    elif has_command shasum; then
+        actual=$(shasum -a 256 "$file" | cut -d' ' -f1)
+    else
+        log_warn "No checksum tool found, skipping verification"
+        return 0
+    fi
+    
+    if [ "$actual" != "$expected" ]; then
+        return 1
+    fi
+    return 0
+}
+
+# Prompt user
+prompt() {
+    question="$1"
+    default="${2:-}"
+    
+    if [ -n "$default" ]; then
+        printf "%s [%s] " "$question" "$default"
+    else
+        printf "%s " "$question"
+    fi
+    
+    read -r answer
+    if [ -z "$answer" ] && [ -n "$default" ]; then
+        answer="$default"
+    fi
+    printf "%s" "$answer"
+}
+
+# =============================================================================
+#                        TOOLCHAIN MANAGEMENT
+# =============================================================================
+
+# Install toolchain
+install_toolchain() {
+    version="${1:-${BITUP_CHANNEL}}"
+    
+    log_step "Installing bit ${version} for ${TARGET}"
+    
+    # Create directories
+    mkdir -p "${INSTALL_ROOT}/toolchains/${version}"
+    mkdir -p "${INSTALL_ROOT}/bin"
+    
+    # Download manifest
+    manifest_url="${BITUP_CDN}/dist/${version}/manifest.txt"
+    manifest_file="${INSTALL_ROOT}/tmp/manifest.txt"
+    
+    mkdir -p "${INSTALL_ROOT}/tmp"
+    download "$manifest_url" "$manifest_file"
+    
+    # Find the right binary
+    binary_name="bit-${TARGET}"
+    binary_url=$(grep "^${binary_name}" "$manifest_file" | cut -d' ' -f2 || true)
+    binary_checksum=$(grep "^${binary_name}" "$manifest_file" | cut -d' ' -f3 || true)
+    
+    if [ -z "$binary_url" ]; then
+        die "No binary available for ${TARGET} with version ${version}"
+    fi
+    
+    # Download binary
+    log_info "Downloading bit..."
+    binary_file="${INSTALL_ROOT}/toolchains/${version}/bit"
+    download "$binary_url" "$binary_file"
+    chmod +x "$binary_file"
+    
+    # Verify checksum
+    if [ -n "$binary_checksum" ]; then
+        log_info "Verifying checksum..."
+        if verify_checksum "$binary_file" "$binary_checksum"; then
+            log_success "Checksum verified"
+        else
+            die "Checksum verification failed"
+        fi
+    fi
+    
+    # Create symlink
+    ln -sf "../toolchains/${version}/bit" "${INSTALL_ROOT}/bin/bit"
+    
+    # Save active version
+    echo "$version" > "${INSTALL_ROOT}/VERSION"
+    
+    log_success "bit ${version} installed successfully!"
+}
+
+# Install from source (fallback)
+install_from_source() {
+    log_step "Building from source..."
+    
+    # Check build dependencies
+    for cmd in gcc make; do
+        if ! has_command "$cmd"; then
+            die "Missing build dependency: $cmd"
+        fi
+    done
+    
+    # Create temp directory
+    build_dir="${INSTALL_ROOT}/tmp/build"
+    mkdir -p "$build_dir"
+    
+    # Download source
+    if [ ! -d "${build_dir}/.git" ]; then
+        git clone --depth=1 "${BITUP_REPO}" "${build_dir}"
+    fi
+    
+    # Build
+    cd "$build_dir"
+    log_info "Compiling..."
+    make release
+    
+    # Install
+    mkdir -p "${INSTALL_ROOT}/toolchains/local"
+    cp "bin/bit" "${INSTALL_ROOT}/toolchains/local/"
+    ln -sf "../toolchains/local/bit" "${INSTALL_ROOT}/bin/bit"
+    
+    log_success "Built from source successfully!"
+}
+
+# Update bitup itself
+self_update() {
+    log_step "Updating bitup..."
+    
+    # Download latest bitup
+    tmp_script="${INSTALL_ROOT}/tmp/bitup.new"
+    download "https://bitup.sh/install.sh" "$tmp_script"
+    
+    # Verify
+    if [ ! -s "$tmp_script" ]; then
+        die "Download failed"
+    fi
+    
+    # Replace current script
+    if [ -n "${BASH_SOURCE:-}" ]; then
+        script_path="${BASH_SOURCE}"
+    else
+        script_path="$0"
+    fi
+    
+    if [ -w "$script_path" ]; then
+        cat "$tmp_script" > "$script_path"
+        chmod +x "$script_path"
+        log_success "bitup updated to latest version"
+    else
+        log_warn "Cannot update script (permission denied)"
+        log_info "New version saved to: $tmp_script"
+    fi
+}
+
+# List installed toolchains
+list_toolchains() {
+    log_step "Installed toolchains"
+    
+    active=$(cat "${INSTALL_ROOT}/VERSION" 2>/dev/null || echo "none")
+    
+    for tc in "${INSTALL_ROOT}"/toolchains/*; do
+        if [ -d "$tc" ]; then
+            name=$(basename "$tc")
+            if [ "$name" = "$active" ]; then
+                printf "  ${GREEN}%s (active)${NC}\n" "$name"
+            else
+                printf "  %s\n" "$name"
+            fi
+        fi
+    done
+}
+
+# =============================================================================
+#                            MAIN INSTALLATION
+# =============================================================================
+
+# Show help
+show_help() {
+    cat << EOF
+${BOLD}bitup${NC} ${DIM}${BITUP_VERSION}${NC}
+The Bitbucket CLI installer
+
+${BOLD}USAGE:${NC}
+    bitup [FLAGS] [OPTIONS]
+
+${BOLD}FLAGS:${NC}
+    -h, --help       Prints help information
+    -v, --verbose    Prints verbose output
+    -y, --yes        Skip confirmation prompts
+    -f, --force      Force installation (overwrite existing)
+    
+${BOLD}OPTIONS:${NC}
+    --channel <CHANNEL>    Channel to install [stable, beta, nightly]
+    --target <TRIPLE>      Target triple to install for
+    --version <VERSION>    Specific version to install
+    --to <DIR>             Install to specific directory
+    
+${BOLD}COMMANDS:${NC}
+    install         Install bit (default)
+    update          Update bit and bitup
+    list            List installed toolchains
+    default         Set default toolchain
+    completions     Generate shell completions
+    self-update     Update bitup itself
+
+${BOLD}EXAMPLES:${NC}
+    curl -fsSL https://bitup.sh | sh
+    curl -fsSL https://bitup.sh | sh -s -- --channel beta
+    curl -fsSL https://bitup.sh | sh -s -- --target x86_64-linux
+    curl -fsSL https://bitup.sh | sh -s -- --to ~/my-custom-path
+
+${BOLD}MORE:${NC}
+    https://bitup.sh
+EOF
+}
+
+# Parse arguments
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -v|--verbose)
+                BITUP_DEBUG=1
+                ;;
+            -y|--yes)
+                ASSUME_YES=1
+                ;;
+            -f|--force)
+                FORCE=1
+                ;;
+            --channel)
+                BITUP_CHANNEL="$2"
+                shift
+                ;;
+            --target)
+                TARGET="$2"
+                shift
+                ;;
+            --version)
+                BITUP_VERSION="$2"
+                shift
+                ;;
+            --to)
+                INSTALL_ROOT="$2"
+                shift
+                ;;
+            install)
+                COMMAND="install"
+                ;;
+            update)
+                COMMAND="update"
+                ;;
+            list)
+                COMMAND="list"
+                ;;
+            default)
+                COMMAND="default"
+                DEFAULT_VERSION="$2"
+                shift
+                ;;
+            completions)
+                COMMAND="completions"
+                ;;
+            self-update)
+                COMMAND="self-update"
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+        shift
+    done
+}
+
+# Main installation flow
+main() {
+    # Show banner
+    cat << "EOF"
+${MAGENTA}
+    ╔═══════════════════════════════════════╗
+    ║  ${BOLD}bitup - The Bitbucket CLI${NC}${MAGENTA}          ║
+    ║  ${DIM}https://bitup.sh${NC}${MAGENTA}                     ║
+    ╚═══════════════════════════════════════╝
+${NC}
+EOF
+    
+    # Detect platform unless specified
+    if [ -z "${TARGET:-}" ]; then
+        detect_platform
+    fi
+    
+    # Handle commands
+    case "${COMMAND:-install}" in
+        install)
+            log_info "Installing bit for ${TARGET}"
+            
+            # Check if already installed
+            if [ -f "${INSTALL_ROOT}/bin/bit" ] && [ -z "${FORCE:-}" ]; then
+                if [ "${ASSUME_YES:-}" != "1" ]; then
+                    answer=$(prompt "bit already installed. Overwrite?" "y/N")
+                    case "$answer" in
+                        y|Y|yes|YES) ;;
+                        *) die "Installation aborted" ;;
+                    esac
+                fi
+            fi
+            
+            # Try binary install first
+            if ! install_toolchain "${BITUP_CHANNEL}" 2>/dev/null; then
+                log_warn "Binary download failed, falling back to source build"
+                install_from_source
+            fi
+            
+            # Setup PATH
+            cat << EOF
+
+${BOLD}Configure your shell:${NC}
+  Add ${INSTALL_ROOT}/bin to your PATH
+
+  ${CYAN}export PATH="\$PATH:${INSTALL_ROOT}/bin"${NC}
+
+  Or run directly:
+  ${CYAN}${INSTALL_ROOT}/bin/bit${NC}
+
+${BOLD}Get started:${NC}
+  ${CYAN}bit login${NC}        # Authenticate with Bitbucket
+  ${CYAN}bit copy <url>${NC}   # Clone a repository
+  ${CYAN}bit --help${NC}       # Show all commands
+EOF
+            ;;
+            
+        update)
+            log_step "Updating bit"
+            self_update
+            
+            # Update toolchain
+            current_version=$(cat "${INSTALL_ROOT}/VERSION" 2>/dev/null || echo "stable")
+            install_toolchain "$current_version"
+            ;;
+            
+        list)
+            list_toolchains
+            ;;
+            
+        default)
+            if [ -n "${DEFAULT_VERSION:-}" ]; then
+                if [ -d "${INSTALL_ROOT}/toolchains/${DEFAULT_VERSION}" ]; then
+                    ln -sf "../toolchains/${DEFAULT_VERSION}/bit" "${INSTALL_ROOT}/bin/bit"
+                    echo "$DEFAULT_VERSION" > "${INSTALL_ROOT}/VERSION"
+                    log_success "Default toolchain set to ${DEFAULT_VERSION}"
+                else
+                    die "Toolchain ${DEFAULT_VERSION} not installed"
+                fi
+            else
+                list_toolchains
+                echo ""
+                echo "Usage: bitup default <version>"
+            fi
+            ;;
+            
+        completions)
+            completions_dir="${INSTALL_ROOT}/completions"
+            mkdir -p "$completions_dir"
+            
+            # Generate completions for different shells
+            if has_command bit; then
+                bit completions bash > "${completions_dir}/bit.bash"
+                bit completions zsh > "${completions_dir}/bit.zsh"
+                bit completions fish > "${completions_dir}/bit.fish"
+                log_success "Completions generated in ${completions_dir}"
+            else
+                die "bit not found in PATH"
+            fi
+            ;;
+            
+        self-update)
+            self_update
+            ;;
+    esac
+}
+
+# Parse arguments and run
+parse_args "$@"
+main
