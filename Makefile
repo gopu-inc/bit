@@ -58,7 +58,7 @@ linux-arm:
 # Windows (Requiert mingw-w64)
 windows:
 	@printf "$(CYAN)Building for Windows (x64)...$(RESET)\n"
-	x86_64-w64-mingw32-gcc $(CFLAGS) $(SRCS) -o $(BIN_DIR)/$(NAME)-win64.exe cross/win64/curl/lib -lcurl -lws2_32 -lcrypt32 -lbcrypt
+	x86_64-w64-mingw32-gcc $(CFLAGS) $(SRCS) -o $(BIN_DIR)/$(NAME)-win64.exe -Icross/win64/curl/include -lcurl -lws2_32 -lcrypt32 -lbcrypt
 
 
 # macOS (Si sur un Mac, compile pour Intel et Apple Silicon)
