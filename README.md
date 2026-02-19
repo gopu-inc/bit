@@ -1,8 +1,4 @@
-
-
-
-<img width="902" height="902" alt="IMG_7907" src="https://github.com/user-attachments/assets/fb49e863-650a-4e56-b858-356f164fcddf" />
-
+[![logo](logo.png)]
 # 🦁 Bit - The Bitbucket CLI Tool
 
 > *powered by gopu.inc*
