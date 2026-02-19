@@ -3,269 +3,379 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bit CLI - Gopu Inc</title>
-    <meta name="description" content="Le client CLI ultime pour Bitbucket. Pipelines, PRs et Workflow Git intégrés.">
+    <title>Bit CLI - L'outil ultime pour Bitbucket par Gopu Inc.</title>
+    <meta name="description" content="Gérez vos PRs et Pipelines Bitbucket à la vitesse de la lumière. Client CLI natif en C.">
     
-    <!-- Tailwind CSS (Pour le style rapide et pro) -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Configuration des couleurs Gopu -->
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Config Tailwind Personnalisée -->
     <script>
         tailwind.config = {
             theme: {
                 extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    },
                     colors: {
-                        gopu: {
-                            dark: '#0B1120',
-                            card: '#1E293B',
-                            accent: '#3B82F6',
-                            terminal: '#0f172a'
+                        brand: {
+                            bg: '#030712',       /* Fond très sombre */
+                            surface: '#111827',  /* Fond des cartes */
+                            primary: '#3b82f6',  /* Bleu Gopu */
+                            secondary: '#6366f1', /* Indigo */
+                            accent: '#10b981'    /* Vert succès */
                         }
                     },
-                    fontFamily: {
-                        mono: ['"Fira Code"', 'monospace'],
+                    animation: {
+                        'blob': 'blob 7s infinite',
+                        'cursor': 'cursor .75s step-end infinite',
+                    },
+                    keyframes: {
+                        blob: {
+                            '0%': { transform: 'translate(0px, 0px) scale(1)' },
+                            '33%': { transform: 'translate(30px, -50px) scale(1.1)' },
+                            '66%': { transform: 'translate(-20px, 20px) scale(0.9)' },
+                            '100%': { transform: 'translate(0px, 0px) scale(1)' },
+                        },
+                        cursor: {
+                            '0%, 100%': { opacity: '1' },
+                            '50%': { opacity: '0' },
+                        }
                     }
                 }
             }
         }
     </script>
-    
-    <!-- Icônes -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+
     <style>
-        /* Effet de curseur clignotant */
-        .cursor::after {
-            content: '▋';
-            animation: blink 1s step-start infinite;
+        /* Effet de verre dépoli */
+        .glass {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
         }
-        @keyframes blink { 50% { opacity: 0; } }
         
-        /* Gradients subtils */
-        .bg-grid {
-            background-image: radial-gradient(#3B82F6 1px, transparent 1px);
-            background-size: 40px 40px;
-            opacity: 0.1;
+        .glass-card {
+            background: linear-gradient(145deg, rgba(31, 41, 55, 0.6) 0%, rgba(17, 24, 39, 0.8) 100%);
+            border: 1px solid rgba(75, 85, 99, 0.4);
         }
+
+        /* Scrollbar custom */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #030712; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+        
+        /* Sélection de texte */
+        ::selection { background: #3b82f6; color: white; }
     </style>
 </head>
-<body class="bg-gopu-dark text-white font-sans antialiased overflow-x-hidden selection:bg-blue-500 selection:text-white">
+<body class="bg-brand-bg text-gray-100 overflow-x-hidden selection:bg-brand-primary selection:text-white">
 
-    <!-- Background Grid Effect -->
-    <div class="fixed inset-0 bg-grid pointer-events-none z-0"></div>
+    <!-- Arrière-plan animé (Blobs) -->
+    <div class="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div class="absolute top-0 left-1/4 w-96 h-96 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
+        <div class="absolute top-0 right-1/4 w-96 h-96 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
+        <div class="absolute -bottom-8 left-1/3 w-96 h-96 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
+    </div>
 
     <!-- Navigation -->
-    <nav class="relative z-50 w-full px-6 py-6 flex justify-between items-center max-w-7xl mx-auto">
-        <div class="flex items-center gap-3">
-            <div class="bg-blue-600 w-8 h-8 rounded-lg flex items-center justify-center font-bold text-lg">b</div>
-            <span class="text-xl font-bold tracking-tight">Gopu Inc <span class="text-blue-500">/ bit</span></span>
+    <nav class="fixed w-full z-50 top-0 start-0 border-b border-white/10 glass">
+        <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between px-6 py-4">
+            <a href="#" class="flex items-center space-x-3 rtl:space-x-reverse group">
+                <div class="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-blue-500/50 transition duration-300">
+                    <span class="font-mono font-bold text-xl text-white">b</span>
+                </div>
+                <span class="self-center text-xl font-bold whitespace-nowrap tracking-tight">Gopu Inc <span class="text-brand-primary">/ bit</span></span>
+            </a>
+            <div class="flex md:order-2 space-x-3 md:space-x-4 rtl:space-x-reverse">
+                <a href="https://github.com/gopu-inc/bit" class="text-gray-300 hover:text-white transition pt-2">
+                    <i class="fab fa-github text-2xl"></i>
+                </a>
+                <a href="https://github.com/gopu-inc/bit/releases" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-900 font-medium rounded-lg text-sm px-5 py-2.5 text-center inline-flex items-center gap-2 transition shadow-lg shadow-blue-500/30">
+                    <i class="fas fa-download"></i> Télécharger
+                </a>
+            </div>
         </div>
-        <div class="hidden md:flex gap-8 text-sm font-medium text-gray-300">
-            <a href="https://github.com/gopu-inc/bit/wiki" class="hover:text-white transition">Documentation</a>
-            <a href="https://github.com/gopu-inc/bit/releases" class="hover:text-white transition">Télécharger</a>
-            <a href="https://github.com/gopu-inc/bit" class="hover:text-white transition">GitHub</a>
-        </div>
-        <a href="https://discord.gg/RgJRE62AJ" target="_blank" class="bg-[#5865F2] hover:bg-[#4752C4] text-white px-5 py-2 rounded-full font-medium transition flex items-center gap-2 shadow-lg shadow-indigo-500/20">
-            <i class="fab fa-discord"></i> Discord
-        </a>
     </nav>
 
     <!-- Hero Section -->
-    <main class="relative z-10 pt-20 pb-32 px-6 max-w-7xl mx-auto text-center lg:text-left lg:flex lg:items-center lg:gap-16">
-        
-        <!-- Texte -->
-        <div class="lg:w-1/2 space-y-8">
-            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-900/30 border border-blue-500/30 text-blue-400 text-xs font-semibold uppercase tracking-wide">
-                <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
-                v1.0.2 Stable Release
-            </div>
+    <section class="relative z-10 pt-40 pb-20 px-6">
+        <div class="max-w-7xl mx-auto text-center lg:text-left lg:flex lg:items-center lg:gap-16">
             
-            <h1 class="text-5xl lg:text-7xl font-extrabold tracking-tight leading-tight">
-                Bitbucket dans votre <br>
-                <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">Terminal.</span>
-            </h1>
-            
-            <p class="text-lg text-gray-400 leading-relaxed max-w-2xl mx-auto lg:mx-0">
-                Gérez vos PRs, surveillez vos Pipelines et déployez sans jamais toucher à la souris. 
-                Conçu en C pour une performance brute.
-            </p>
+            <!-- Colonne Gauche : Texte -->
+            <div class="lg:w-1/2 space-y-8 animate-fade-in-up">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold uppercase tracking-wide backdrop-blur-sm">
+                    <span class="flex h-2 w-2 relative">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                    </span>
+                    Version 1.0.2 Disponible
+                </div>
 
-            <div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start pt-4">
-                <!-- Commande de copie rapide -->
-                <div class="group relative bg-gopu-card border border-gray-700 rounded-lg flex items-center px-4 py-3 font-mono text-sm text-gray-300 shadow-xl hover:border-blue-500 transition cursor-pointer" onclick="copyInstall()">
-                    <span class="text-green-400 mr-3">$</span>
-                    <span id="install-cmd">curl -fsSL https://raw.githubusercontent.com/gopu-inc/bit/main/script/bitup-sh | sudo sh</span>
-                    <i class="far fa-copy ml-4 text-gray-500 group-hover:text-white transition"></i>
+                <h1 class="text-5xl lg:text-7xl font-extrabold tracking-tight text-white leading-[1.1]">
+                    Bitbucket à la <br>
+                    <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400">Vitesse Lumière.</span>
+                </h1>
+                
+                <p class="text-lg text-gray-400 leading-relaxed max-w-2xl mx-auto lg:mx-0">
+                    Oubliez l'interface web lente. Pilotez vos PRs, vos Pipelines et vos dépôts directement depuis votre terminal. 
+                    <span class="text-white font-semibold">100% C. 0% Bloatware.</span>
+                </p>
+
+                <!-- Installation Box -->
+                <div class="mt-8 bg-brand-surface border border-gray-700 rounded-xl overflow-hidden shadow-2xl max-w-md mx-auto lg:mx-0 text-left">
+                    <!-- Tabs -->
+                    <div class="flex border-b border-gray-700 bg-gray-900/50">
+                        <button onclick="switchTab('curl')" id="tab-curl" class="px-4 py-2 text-xs font-mono text-white border-b-2 border-blue-500 bg-white/5 transition">cURL</button>
+                        <button onclick="switchTab('wget')" id="tab-wget" class="px-4 py-2 text-xs font-mono text-gray-400 hover:text-white border-b-2 border-transparent transition">Wget</button>
+                    </div>
+                    <!-- Command -->
+                    <div class="p-4 flex items-center justify-between group cursor-pointer bg-black/40" onclick="copyCmd()">
+                        <code id="install-cmd" class="font-mono text-sm text-green-400 truncate mr-4">curl -fsSL https://raw.githubusercontent.com/gopu-inc/bit/main/script/bitup-sh | sudo sh</code>
+                        <div class="text-gray-500 group-hover:text-white transition relative">
+                            <i class="far fa-copy"></i>
+                            <span id="copy-feedback" class="absolute -top-8 -right-2 bg-white text-black text-xs px-2 py-1 rounded opacity-0 transition">Copié!</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pt-4 flex flex-col sm:flex-row gap-4 justify-center lg:justify-start text-sm text-gray-500">
+                    <span class="flex items-center gap-2"><i class="fab fa-linux"></i> Linux (x64/ARM64)</span>
+                    <span class="flex items-center gap-2"><i class="fab fa-apple"></i> macOS</span>
+                    <span class="flex items-center gap-2"><i class="fab fa-windows"></i> WSL</span>
+                </div>
+            </div>
+
+            <!-- Colonne Droite : Terminal 3D -->
+            <div class="lg:w-1/2 mt-16 lg:mt-0 relative perspective-1000">
+                <!-- Halo derrière le terminal -->
+                <div class="absolute -inset-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl blur opacity-20"></div>
+                
+                <div class="relative bg-[#0d1117] rounded-xl border border-gray-800 shadow-2xl transform rotate-y-2 hover:rotate-y-0 transition duration-700 ease-out">
+                    <!-- Header Terminal -->
+                    <div class="flex items-center px-4 py-3 bg-[#161b22] border-b border-gray-800 rounded-t-xl gap-2">
+                        <div class="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
+                        <div class="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
+                        <div class="w-3 h-3 rounded-full bg-[#27c93f]"></div>
+                        <div class="ml-auto text-xs text-gray-500 font-mono">zsh — 80x24</div>
+                    </div>
                     
-                    <!-- Tooltip -->
-                    <div id="copy-tooltip" class="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs py-1 px-2 rounded opacity-0 transition">Copié !</div>
-                </div>
-            </div>
-            
-            <p class="text-xs text-gray-500 mt-4">
-                Compatible Linux (x64/ARM64), macOS & Windows WSL.
-            </p>
-        </div>
-
-        <!-- Terminal Demo -->
-        <div class="lg:w-1/2 mt-16 lg:mt-0 perspective-1000">
-            <div class="bg-gopu-terminal rounded-xl border border-gray-700 shadow-2xl overflow-hidden transform transition hover:scale-[1.01] duration-500">
-                <!-- Terminal Header -->
-                <div class="bg-gray-800 px-4 py-2 flex items-center gap-2 border-b border-gray-700">
-                    <div class="w-3 h-3 rounded-full bg-red-500"></div>
-                    <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
-                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
-                    <div class="ml-4 text-xs text-gray-400 font-mono">user@gopu-inc: ~/project</div>
-                </div>
-                <!-- Terminal Body -->
-                <div class="p-6 font-mono text-sm h-[320px] overflow-hidden">
-                    <div id="typewriter" class="text-gray-300 space-y-2">
-                        <!-- Le JS va écrire ici -->
+                    <!-- Contenu Terminal -->
+                    <div class="p-6 font-mono text-sm leading-relaxed h-[360px] overflow-hidden text-gray-300">
+                        <div id="terminal-content">
+                            <!-- Le JS va remplir ceci -->
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-    </main>
+    </section>
 
-    <!-- Features Grid -->
-    <section class="bg-gopu-card border-t border-gray-800 py-24 relative z-10">
+    <!-- Bento Grid Features -->
+    <section class="py-24 relative z-10 bg-black/20 backdrop-blur-sm border-t border-white/5">
         <div class="max-w-7xl mx-auto px-6">
             <div class="text-center mb-16">
-                <h2 class="text-3xl font-bold mb-4">Pourquoi Gopu Inc a créé Bit ?</h2>
-                <p class="text-gray-400">Parce que les interfaces web sont trop lentes pour les vrais ingénieurs.</p>
+                <h2 class="text-3xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-b from-white to-gray-400">Pourquoi les pros utilisent Bit ?</h2>
+                <p class="text-gray-400">Conçu par Gopu Inc pour les ingénieurs exigeants.</p>
             </div>
 
-            <div class="grid md:grid-cols-3 gap-8">
-                <!-- Feature 1 -->
-                <div class="p-8 bg-gopu-dark border border-gray-800 rounded-2xl hover:border-blue-500/50 transition duration-300 group">
-                    <div class="w-12 h-12 bg-blue-900/20 rounded-lg flex items-center justify-center text-blue-400 mb-6 group-hover:scale-110 transition">
-                        <i class="fas fa-rocket text-xl"></i>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 auto-rows-[200px]">
+                
+                <!-- Grande carte : Performance -->
+                <div class="glass-card rounded-2xl p-8 md:col-span-2 row-span-1 relative overflow-hidden group hover:border-blue-500/30 transition">
+                    <div class="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+                    <div class="flex flex-col h-full justify-between relative z-10">
+                        <div>
+                            <div class="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center text-blue-400 mb-4">
+                                <i class="fas fa-bolt"></i>
+                            </div>
+                            <h3 class="text-xl font-bold text-white mb-2">Performance Native C</h3>
+                            <p class="text-gray-400 text-sm max-w-lg">Pas de machine virtuelle Python ou Java. Bit est compilé en code machine pur. Il démarre en 12ms.</p>
+                        </div>
                     </div>
-                    <h3 class="text-xl font-bold mb-3">Vitesse Supersonique</h3>
-                    <p class="text-gray-400 text-sm leading-relaxed">
-                        Écrit en C pur. Pas de runtime Python, pas de JVM. Démarrage instantané et gestion mémoire chirurgicale.
-                    </p>
                 </div>
 
-                <!-- Feature 2 -->
-                <div class="p-8 bg-gopu-dark border border-gray-800 rounded-2xl hover:border-purple-500/50 transition duration-300 group">
-                    <div class="w-12 h-12 bg-purple-900/20 rounded-lg flex items-center justify-center text-purple-400 mb-6 group-hover:scale-110 transition">
-                        <i class="fas fa-code-branch text-xl"></i>
+                <!-- Carte : CI/CD -->
+                <div class="glass-card rounded-2xl p-8 group hover:border-purple-500/30 transition relative overflow-hidden">
+                    <div class="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition"></div>
+                    <div class="relative z-10">
+                        <div class="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center text-purple-400 mb-4">
+                            <i class="fas fa-sync"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-white mb-2">Pipelines en Direct</h3>
+                        <p class="text-gray-400 text-sm">Visualisez les logs de build sans ouvrir le navigateur.</p>
                     </div>
-                    <h3 class="text-xl font-bold mb-3">Workflow Natif</h3>
-                    <p class="text-gray-400 text-sm leading-relaxed">
-                        Créez, revoyez et fusionnez vos Pull Requests sans jamais quitter votre terminal. <code>bit merge-create</code> et c'est parti.
-                    </p>
                 </div>
 
-                <!-- Feature 3 -->
-                <div class="p-8 bg-gopu-dark border border-gray-800 rounded-2xl hover:border-green-500/50 transition duration-300 group">
-                    <div class="w-12 h-12 bg-green-900/20 rounded-lg flex items-center justify-center text-green-400 mb-6 group-hover:scale-110 transition">
-                        <i class="fas fa-sync-alt text-xl"></i>
+                <!-- Carte : Workflow -->
+                <div class="glass-card rounded-2xl p-8 group hover:border-green-500/30 transition">
+                    <div class="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center text-green-400 mb-4">
+                        <i class="fas fa-code-branch"></i>
                     </div>
-                    <h3 class="text-xl font-bold mb-3">CI/CD Intégré</h3>
-                    <p class="text-gray-400 text-sm leading-relaxed">
-                        Surveillez vos Pipelines Bitbucket en temps réel. Logs en streaming et status des builds directement dans la console.
-                    </p>
+                    <h3 class="text-lg font-bold text-white mb-2">PR Management</h3>
+                    <p class="text-gray-400 text-sm">Créez, validez et mergez vos Pull Requests en une ligne de commande.</p>
+                </div>
+
+                <!-- Grande carte : Sécurité -->
+                <div class="glass-card rounded-2xl p-8 md:col-span-2 row-span-1 flex items-center justify-between group hover:border-red-500/30 transition">
+                    <div class="max-w-md">
+                        <div class="w-10 h-10 bg-red-500/20 rounded-lg flex items-center justify-center text-red-400 mb-4">
+                            <i class="fas fa-shield-alt"></i>
+                        </div>
+                        <h3 class="text-xl font-bold text-white mb-2">Sécurité Enterprise</h3>
+                        <p class="text-gray-400 text-sm">Gestion des tokens chiffrée localement. Audit de code continu via CodeQL. Conforme aux standards Gopu.</p>
+                    </div>
+                    <div class="hidden md:block text-8xl text-red-500/10 rotate-12">
+                        <i class="fas fa-lock"></i>
+                    </div>
                 </div>
             </div>
         </div>
     </section>
 
     <!-- Footer -->
-    <footer class="bg-black py-12 border-t border-gray-900 relative z-10">
+    <footer class="bg-[#02040a] py-12 border-t border-gray-900 relative z-20">
         <div class="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
             <div class="text-center md:text-left">
-                <span class="font-bold text-lg text-white">Gopu Inc.</span>
-                <p class="text-gray-500 text-xs mt-1">© 2026 Gopu Inc. All rights reserved.</p>
+                <div class="flex items-center justify-center md:justify-start gap-2 mb-2">
+                    <div class="w-6 h-6 bg-blue-600 rounded flex items-center justify-center text-xs font-bold">b</div>
+                    <span class="font-bold text-lg text-white">Gopu Inc.</span>
+                </div>
+                <p class="text-gray-500 text-xs">© 2026 Gopu Inc. All rights reserved.</p>
                 <p class="text-gray-600 text-xs mt-1 italic">"Make it fast. Make it right."</p>
             </div>
             
-            <div class="flex gap-6">
-                <a href="https://github.com/gopu-inc/bit" class="text-gray-500 hover:text-white transition"><i class="fab fa-github text-xl"></i></a>
-                <a href="https://discord.gg/RgJRE62AJ" class="text-gray-500 hover:text-[#5865F2] transition"><i class="fab fa-discord text-xl"></i></a>
-                <a href="https://bitbucket.org/gopu-sin/bit" class="text-gray-500 hover:text-blue-500 transition"><i class="fab fa-bitbucket text-xl"></i></a>
+            <div class="flex gap-4">
+                <a href="https://discord.gg/RgJRE62AJ" class="bg-[#5865F2] hover:bg-[#4752C4] text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                    <i class="fab fa-discord"></i> Communauté
+                </a>
+                <a href="https://github.com/gopu-inc/bit" class="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                    <i class="fab fa-github"></i> GitHub
+                </a>
             </div>
         </div>
     </footer>
 
-    <!-- Script pour l'animation du terminal -->
+    <!-- Scripts -->
     <script>
-        // Fonction copier-coller
-        function copyInstall() {
-            const cmd = document.getElementById('install-cmd').innerText;
-            navigator.clipboard.writeText(cmd);
+        // --- 1. Gestion des Tabs d'installation ---
+        const cmds = {
+            'curl': 'curl -fsSL https://raw.githubusercontent.com/gopu-inc/bit/main/script/bitup-sh | sudo sh',
+            'wget': 'wget -qO- https://raw.githubusercontent.com/gopu-inc/bit/main/script/bitup-sh | sudo sh'
+        };
+
+        function switchTab(type) {
+            // Update text
+            document.getElementById('install-cmd').innerText = cmds[type];
             
-            const tooltip = document.getElementById('copy-tooltip');
-            tooltip.style.opacity = '1';
-            setTimeout(() => { tooltip.style.opacity = '0'; }, 2000);
+            // Update buttons style
+            const btnCurl = document.getElementById('tab-curl');
+            const btnWget = document.getElementById('tab-wget');
+            
+            if(type === 'curl') {
+                btnCurl.className = "px-4 py-2 text-xs font-mono text-white border-b-2 border-blue-500 bg-white/5 transition";
+                btnWget.className = "px-4 py-2 text-xs font-mono text-gray-400 hover:text-white border-b-2 border-transparent transition";
+            } else {
+                btnWget.className = "px-4 py-2 text-xs font-mono text-white border-b-2 border-blue-500 bg-white/5 transition";
+                btnCurl.className = "px-4 py-2 text-xs font-mono text-gray-400 hover:text-white border-b-2 border-transparent transition";
+            }
         }
 
-        // Animation Typewriter
-        const commands = [
-            { text: "bit login", output: "Authenticating with Bitbucket... Success! 🔓" },
-            { text: "bit copy https://bitbucket.org/gopu/project", output: "Cloning repository... 100% done. 📦" },
-            { text: "bit create-branch feature/super-fast", output: "Switched to branch 'feature/super-fast' 🚀" },
-            { text: "bit ci --stream", output: "Pipeline #42 running... Build PASS ✅" },
+        // --- 2. Copier-Coller ---
+        function copyCmd() {
+            const text = document.getElementById('install-cmd').innerText;
+            navigator.clipboard.writeText(text);
+            const fb = document.getElementById('copy-feedback');
+            fb.style.opacity = '1';
+            setTimeout(() => fb.style.opacity = '0', 2000);
+        }
+
+        // --- 3. Animation Terminal Avancée ---
+        const terminalContent = document.getElementById('terminal-content');
+        const sequence = [
+            { type: 'input', text: 'bit login', delay: 1000 },
+            { type: 'output', html: '<span class="text-green-400">✔</span> Authenticated as <span class="text-blue-400">dev@gopu.inc</span> via OAuth2', delay: 500 },
+            { type: 'input', text: 'bit create-branch feature/ui-v2', delay: 800 },
+            { type: 'output', html: '<span class="text-gray-500">Switched to new branch "feature/ui-v2"</span>', delay: 300 },
+            { type: 'input', text: 'bit sends', delay: 1200 },
+            { type: 'output', html: 'Compressing objects: 100% (12/12), done.<br>Writing objects: 100% (12/12), 4.20 KiB | 4.20 MiB/s<br><span class="text-green-400">✔</span> Pushed to origin/feature/ui-v2', delay: 800 },
+            { type: 'input', text: 'bit pr-create --auto', delay: 1000 },
+            { type: 'output', html: 'Created PR #42: "Feature UI V2"<br>Link: <a href="#" class="text-blue-500 underline">https://bitbucket.org/gopu/bit/pull-requests/42</a>', delay: 2000 },
+            { type: 'clear', delay: 500 } // Reset
         ];
 
-        let cmdIndex = 0;
+        let seqIndex = 0;
         let charIndex = 0;
-        let isTyping = true;
-        const terminal = document.getElementById('typewriter');
 
-        function typeLoop() {
-            if (cmdIndex >= commands.length) {
-                cmdIndex = 0; // Boucle infinie
-                terminal.innerHTML = '';
+        function runTerminal() {
+            if (seqIndex >= sequence.length) {
+                seqIndex = 0;
+                terminalContent.innerHTML = '';
             }
 
-            const currentCmd = commands[cmdIndex];
-            
-            // Créer la ligne actuelle si elle n'existe pas
-            let currentLine = document.getElementById(`line-${cmdIndex}`);
-            if (!currentLine) {
-                currentLine = document.createElement('div');
-                currentLine.id = `line-${cmdIndex}`;
-                currentLine.className = "flex flex-col";
-                currentLine.innerHTML = `
-                    <div class="flex"><span class="text-green-400 mr-2">➜</span><span class="text-blue-400 mr-2">~</span> <span id="text-${cmdIndex}"></span><span class="cursor text-gray-400 ml-1"></span></div>
-                `;
-                terminal.appendChild(currentLine);
-                // Retirer le curseur des lignes précédentes
-                if (cmdIndex > 0) {
-                    const prevCursor = document.querySelector(`#line-${cmdIndex-1} .cursor`);
-                    if(prevCursor) prevCursor.style.display = 'none';
-                }
+            const step = sequence[seqIndex];
+
+            if (step.type === 'clear') {
+                terminalContent.innerHTML = '';
+                seqIndex++;
+                setTimeout(runTerminal, step.delay);
+                return;
             }
 
-            const textElem = document.getElementById(`text-${cmdIndex}`);
-
-            if (isTyping) {
-                if (charIndex < currentCmd.text.length) {
-                    textElem.innerHTML += currentCmd.text.charAt(charIndex);
-                    charIndex++;
-                    setTimeout(typeLoop, 50 + Math.random() * 50); // Vitesse de frappe aléatoire
-                } else {
-                    isTyping = false;
-                    setTimeout(typeLoop, 500); // Pause avant l'output
+            if (step.type === 'output') {
+                const div = document.createElement('div');
+                div.className = "mb-2 animate-fade-in";
+                div.innerHTML = step.html;
+                terminalContent.appendChild(div);
+                seqIndex++;
+                setTimeout(runTerminal, step.delay);
+            } 
+            else if (step.type === 'input') {
+                // Check if current line exists
+                let line = document.getElementById(`cmd-${seqIndex}`);
+                if (!line) {
+                    line = document.createElement('div');
+                    line.id = `cmd-${seqIndex}`;
+                    line.className = "flex items-center mb-1";
+                    line.innerHTML = `<span class="text-blue-500 mr-2">➜</span><span class="text-purple-400 mr-2">~</span> <span id="txt-${seqIndex}"></span><span class="w-2 h-4 bg-gray-500 ml-1 animate-cursor"></span>`;
+                    terminalContent.appendChild(line);
+                    
+                    // Remove cursor from previous lines
+                    const prevCursors = document.querySelectorAll('.animate-cursor');
+                    prevCursors.forEach((c, idx) => {
+                        if (idx < prevCursors.length - 1) c.style.display = 'none';
+                    });
                 }
-            } else {
-                // Afficher l'output
-                const outputDiv = document.createElement('div');
-                outputDiv.className = "text-gray-500 ml-6 mt-1 mb-2 fade-in";
-                outputDiv.innerHTML = currentCmd.output;
-                document.getElementById(`line-${cmdIndex}`).appendChild(outputDiv);
+
+                const textSpan = document.getElementById(`txt-${seqIndex}`);
                 
-                cmdIndex++;
-                charIndex = 0;
-                isTyping = true;
-                setTimeout(typeLoop, 1500); // Pause avant la prochaine commande
+                if (charIndex < step.text.length) {
+                    textSpan.innerHTML += step.text.charAt(charIndex);
+                    charIndex++;
+                    setTimeout(runTerminal, 50 + Math.random() * 50); // Random typing speed
+                } else {
+                    charIndex = 0;
+                    seqIndex++;
+                    setTimeout(runTerminal, step.delay);
+                }
             }
         }
 
-        // Démarrer l'animation
-        window.onload = typeLoop;
+        // Start
+        window.onload = () => {
+            runTerminal();
+        };
     </script>
 </body>
 </html>
