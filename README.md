@@ -1,4 +1,4 @@
-[![logo](logo.png)]
+![logo](logo22.png)
 # 🦁 Bit - The Bitbucket CLI Tool
 
 > *powered by gopu.inc*
