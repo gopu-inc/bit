@@ -1,0 +1,39 @@
+# 🤖 Dependabot Configuration - Gopu Inc
+# Maintient automatiquement les dépendances CI/CD à jour.
+
+version: 2
+updates:
+  # 1. Maintenance des GitHub Actions (Workflows)
+  # C'est crucial pour garder codeql.yml et vos autres workflows sécurisés.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Africa/Kinshasa" # Adapté à votre fuseau horaire
+    
+    # Limite le bruit : max 10 PR ouvertes en même temps
+    open-pull-requests-limit: 10
+
+    # Bonnes pratiques Gopu : Grouping
+    # Au lieu d'avoir 5 PRs pour 5 actions, on en fait une seule groupée.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+    # Convention de commit (Respecte votre CONTRIBUTING.md)
+    commit-message:
+      prefix: "ci"
+      prefix-development: "ci"
+      include: "scope"
+
+  # 2. Maintenance Docker (Optionnel)
+  # Si vous ajoutez un Dockerfile pour la compilation à l'avenir.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
