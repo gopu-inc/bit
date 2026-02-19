@@ -1,0 +1,57 @@
+name: "CodeQL Security Analysis"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '30 1 * * 0'  # Analyse hebdomadaire (Dimanche à 1h30)
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'c-cpp' ]
+        # CodeQL traite le C et le C++ ensemble
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Initialisation du moteur d'analyse
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ matrix.language }}
+        # Utilise les requêtes de sécurité étendues pour une analyse plus profonde
+        queries: security-extended,security-and-quality
+
+    # ⚠️ ÉTAPE CRITIQUE : Installation des dépendances
+    # CodeQL doit pouvoir compiler le code pour l'analyser.
+    # Comme bit utilise libcurl, nous devons l'installer sur le runner.
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcurl4-openssl-dev build-essential
+
+    # Compilation manuelle
+    # Nous remplaçons l'autobuild par votre commande exacte pour garantir la précision
+    - name: Build bit
+      run: |
+        make clean
+        make release
+
+    # Lancement de l'analyse
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:${{matrix.language}}"
