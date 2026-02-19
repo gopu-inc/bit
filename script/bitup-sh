@@ -1,54 +1,46 @@
 #!/bin/sh
-# bitup - The Bitbucket CLI installer for gopu.inc
-# Fix: Support i686 with specific asset matching
-
 set -eu
 
+# Configuration basée sur ton URL réelle
 GITHUB_REPO="gopu-inc/bit"
-GITHUB_API="https://api.github.com/repos/${GITHUB_REPO}/download/latest/"
+# On cible directement ton tag "latest"
+RELEASE_BASE="https://github.com/${GITHUB_REPO}/releases/download/latest"
 INSTALL_DIR="/usr/local/bin"
 
 G='\033[0;32m'; B='\033[1;34m'; R='\033[0;31m'; NC='\033[0m'
-
 log_step() { printf "${B}==>${NC} %s\n" "$*"; }
 log_error() { printf "${R}error:${NC} %s\n" "$*" >&2; exit 1; }
 
-# 1. Détection robuste de l'architecture
+# 1. Détection de l'architecture
 ARCH=$(uname -m)
 case "${ARCH}" in
-    x86_64|amd64)   ASSET_PATTERN="linux_x64" ;;    # Matche bit-linux_x64-v1.0.2.1.tar.gz
-    aarch64|arm64)  ASSET_PATTERN="aarch64" ;;      # Matche bit-1.0.2-aarch64.tar.gz
-    i386|i686)      ASSET_PATTERN="linux_x86" ;;    # Matche bit-linux_x86-v1.0.2.1.tar.gz
+    x86_64|amd64)   ASSET_NAME="bit-linux_x64-v1.0.2.1.tar.gz" ;;
+    aarch64|arm64)  ASSET_NAME="bit-1.0.2-aarch64.tar.gz" ;;
+    i386|i686)      ASSET_NAME="bit-linux_x86-v1.0.2.1.tar.gz" ;;
     *) log_error "Architecture ${ARCH} non supportée." ;;
 esac
 
 main() {
-    log_step "Fetching release data for ${ARCH}..."
+    log_step "Detected ${ARCH}. Preparing to download ${ASSET_NAME}..."
     
-    # Utilisation de 'grep -i' pour ignorer la casse et être plus flexible
-    RELEASE_DATA=$(curl -s "$GITHUB_API")
-    
-    # Extraction de l'URL brute de l'asset
-    DOWNLOAD_URL=$(echo "$RELEASE_DATA" | grep "browser_download_url" | grep -i "$ASSET_PATTERN" | grep ".tar.gz" | head -1 | cut -d'"' -f4)
-
-    if [ -z "$DOWNLOAD_URL" ]; then
-        log_error "Aucun asset trouvé pour '${ASSET_PATTERN}' sur GitHub. Vérifiez vos noms de fichiers."
-    fi
-
-    log_step "Downloading $(basename "$DOWNLOAD_URL")..."
+    DOWNLOAD_URL="${RELEASE_BASE}/${ASSET_NAME}"
     TMP_DIR=$(mktemp -d)
     cd "$TMP_DIR"
-    curl -fL "$DOWNLOAD_URL" -o "package.tar.gz"
 
-    log_step "Extracting and installing..."
+    # 2. Téléchargement direct
+    if ! curl -fL "$DOWNLOAD_URL" -o "package.tar.gz"; then
+        log_error "Impossible de télécharger ${DOWNLOAD_URL}. Vérifiez que le fichier existe dans la release 'latest'."
+    fi
+
+    # 3. Extraction et Installation
     tar -xzf "package.tar.gz"
-    
-    # Trouve le binaire (souvent nommé bit-linux_x86 ou bit)
+    # On cherche le binaire exécutable extrait
     BIT_BIN=$(find . -type f -executable ! -name "*.tar.gz" | head -1)
     
     if [ -z "$BIT_BIN" ]; then log_error "Binaire introuvable dans l'archive."; fi
     
     chmod +x "$BIT_BIN"
+    log_step "Installing to ${INSTALL_DIR}/bit..."
     
     if [ -w "$INSTALL_DIR" ]; then
         mv "$BIT_BIN" "${INSTALL_DIR}/bit"
@@ -57,7 +49,7 @@ main() {
     fi
 
     rm -rf "$TMP_DIR"
-    printf "${G}✅ bit est maintenant installé pour l'architecture ${ARCH} !${NC}\n"
+    printf "${G}✅ bit est installé avec succès pour ${ARCH} !${NC}\n"
 }
 
 main "$@"
